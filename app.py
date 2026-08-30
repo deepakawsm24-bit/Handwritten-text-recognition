@@ -4,7 +4,7 @@
 import os
 
 # Import pickle for loading the saved character mapping
-import pickle
+import json
 
 # Import NumPy for numerical operations
 import numpy as np
@@ -39,19 +39,14 @@ MODEL_PATH = os.path.join(
 # Define the path to the character-ID mapping
 NUM_TO_CHAR_PATH = os.path.join(
     BASE_DIR,
-    "..",
-    "common",
-    "num_to_char.pkl"
+    "char_mapping.json"
 )
 
 # Define the path to the image configuration file
 IMAGE_CONFIG_PATH = os.path.join(
     BASE_DIR,
-    "..",
-    "common",
-    "image_config.json"
+    "ctc_config.json"
 )
-
 
 # ============================================================
 # 3. LOAD MODEL AND CHARACTER MAPPING
@@ -80,11 +75,16 @@ prediction_model = tf.keras.models.load_model(
 # from the common folder.
 with open(
     NUM_TO_CHAR_PATH,
-    "rb"
+    "r",
+    encoding="utf-8"
 ) as f:
 
-    # Read the saved mapping from the pickle file
-    num_to_char = pickle.load(f)
+    mapping_data = json.load(f)
+
+num_to_char = {
+    int(k): v
+    for k, v in mapping_data["num_to_char"].items()
+}
 
 
 # Print confirmation so we know the model loaded successfully
