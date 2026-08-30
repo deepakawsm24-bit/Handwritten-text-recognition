@@ -6,10 +6,6 @@ import tensorflow as tf
 import streamlit as st
 from PIL import Image, ImageOps
 
-try:
-    from streamlit_drawable_canvas import st_canvas
-except ImportError:
-    st_canvas = None
 
 # ============================================================
 # 1. APP CONFIG
@@ -315,68 +311,66 @@ with tab_upload:
 # DRAW TAB
 # ------------------------------------------------------------
 with tab_draw:
-    st.header("Draw a Handwritten Word")
-    st.write("Draw one English word inside the canvas.")
+    st.header("✍️ Draw a Handwritten Word")
+    st.write(
+        "Draw one English word in a drawing app (Paint/Snipping Tool), "
+        "save it as PNG/JPG, then upload it here."
+    )
 
-    if st_canvas is None:
-        st.error(
-            "The drawing component is not installed. "
-            "Install streamlit-drawable-canvas from requirements.txt."
-        )
-    else:
-        canvas_result = st_canvas(
-            fill_color="rgba(255, 255, 255, 0)",
-            stroke_width=7,
-            stroke_color="#000000",
-            background_color="#FFFFFF",
-            height=220,
-            width=700,
-            drawing_mode="freedraw",
-            key="word_canvas",
-        )
+    st.info(
+        "The old embedded drawing canvas was removed because its dependency "
+        "is no longer maintained. Your existing CRNN + CTC prediction pipeline "
+        "is unchanged."
+    )
 
-        auto_crop_draw = st.checkbox(
-            "Automatically crop handwriting",
-            value=True,
-            key="auto_crop_draw",
-        )
+    draw_file = st.file_uploader(
+        "Choose your drawing image",
+        type=["png", "jpg", "jpeg"],
+        key="draw_upload",
+        help="Save your handwritten word as a PNG/JPG and upload it here.",
+    )
 
-        if st.button(
-            "🔎 Recognize Word",
-            key="recognize_draw",
-            type="primary",
-        ):
-            if canvas_result.image_data is None:
-                st.warning("Please draw a word first.")
-            else:
-                rgba = np.asarray(canvas_result.image_data).astype(np.uint8)
+    auto_crop_draw = st.checkbox(
+        "Automatically crop handwriting",
+        value=True,
+        key="auto_crop_draw",
+    )
 
-                # Ignore the alpha channel and use the RGB image.
-                draw_image = Image.fromarray(rgba[..., :3], mode="RGB")
+    if draw_file is not None:
+        try:
+            draw_image = Image.open(draw_file).convert("RGB")
 
-                # Check whether anything was actually drawn.
-                gray = np.asarray(
-                    ImageOps.grayscale(draw_image)
+            st.image(
+                draw_image,
+                caption="Drawing",
+                width=700,
+            )
+
+            if st.button(
+                "🔎 Recognize Word",
+                key="recognize_draw",
+                type="primary",
+            ):
+                with st.spinner("Recognizing..."):
+                    predicted, cropped, processed = predict_word(
+                        draw_image,
+                        auto_crop=auto_crop_draw,
+                    )
+
+                st.image(
+                    cropped,
+                    caption="Image used for recognition",
+                    width=500,
                 )
-                if np.all(gray > 245):
-                    st.warning("Please draw a word first.")
-                else:
-                    with st.spinner("Recognizing..."):
-                        predicted, cropped, processed = predict_word(
-                            draw_image,
-                            auto_crop=auto_crop_draw,
-                        )
 
-                    st.image(
-                        cropped,
-                        caption="Image used for recognition",
-                        width=500,
-                    )
+                st.subheader("Prediction")
+                st.success(
+                    predicted if predicted else "[empty prediction]"
+                )
 
-                    st.subheader("Prediction")
-                    st.success(
-                        predicted if predicted else "[empty prediction]"
-                    )
+        except Exception as e:
+            st.error("Could not process this drawing.")
+            st.exception(e)
 
 # ============================================================
 # 8. MODEL INFORMATION
