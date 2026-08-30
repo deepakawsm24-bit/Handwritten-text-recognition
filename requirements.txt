@@ -1,4 +1,5 @@
 streamlit
 tensorflow
+streamlit-drawable-canvas
 numpy
 pillow
