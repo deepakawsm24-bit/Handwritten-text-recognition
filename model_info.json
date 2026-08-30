@@ -1,0 +1,15 @@
+{
+    "model_name": "CRNN_CTC_Basemodel",
+    "model_type": "CRNN + CTC",
+    "best_epoch": 4,
+    "best_validation_loss": 2.7908706665039062,
+    "input_shape": [
+        64,
+        256,
+        1
+    ],
+    "output_shape": [
+        32,
+        80
+    ]
+}

@@ -1,0 +1,5 @@
+{
+    "decoder": "greedy",
+    "time_steps": 32,
+    "num_classes": 80
+}
