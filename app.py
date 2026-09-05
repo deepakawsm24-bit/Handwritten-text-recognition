@@ -338,7 +338,7 @@ with tab_upload:
 # 11. DRAW TAB
 # ============================================================
 
-with draw_tab:
+with tab_draw:
 
     st.header(
         "✍️ Draw a Handwritten Word"
