@@ -271,6 +271,7 @@ def decode_prediction(predictions):
 # ------------------------------------------------------------
 # UPLOAD TAB
 # ------------------------------------------------------------
+tab_upload, tab_draw = st.tabs(["📤 Upload", "✍️ Draw"])
 with tab_upload:
     st.header("Upload a Handwritten Word")
     st.write("Upload an image containing a single handwritten word.")
