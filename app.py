@@ -75,16 +75,24 @@ prediction_model = tf.keras.models.load_model(
     compile=False
 )
 
+# Load character mapping
+if os.path.exists(NUM_TO_CHAR_PATH):
+    with open(NUM_TO_CHAR_PATH, "rb") as f:
+        num_to_char = pickle.load(f)
 
-# Load the saved character-ID-to-character mapping
-# from the common folder.
-with open(
-    NUM_TO_CHAR_PATH,
-    "rb"
-) as f:
+elif os.path.exists(CHAR_MAPPING_JSON):
+    with open(CHAR_MAPPING_JSON, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    # Read the saved mapping from the pickle file
-    num_to_char = pickle.load(f)
+    if isinstance(data, dict) and "num_to_char" in data:
+        data = data["num_to_char"]
+
+    num_to_char = {int(k): str(v) for k, v in data.items()}
+
+else:
+    raise FileNotFoundError(
+        "Character mapping not found."
+    )
 
 
 # Print confirmation so we know the model loaded successfully
