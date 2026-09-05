@@ -3,6 +3,9 @@
 # Import os for handling file and folder paths
 import os
 
+# Import json for reading the character mapping
+import json
+
 # Import pickle for loading the saved character mapping
 import pickle
 
