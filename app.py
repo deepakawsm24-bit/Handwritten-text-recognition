@@ -603,60 +603,56 @@ with upload_tab:
 
 
 # Define a function to crop an image around the handwriting
+# Define a function to crop an image around the handwriting
 def crop_to_ink(image):
 
     # Convert the RGB image to grayscale
-    grayscale_image = tf.image.rgb_to_grayscale(
-        image
-    )
+    grayscale_image = tf.image.rgb_to_grayscale(image)
 
-    # Create a mask for dark pixels
-    # White background is approximately 255
-    # Handwriting is darker than 250
-    ink_mask = (
-        grayscale_image[:, :, 0] < 250
-    )
+    # Detect only dark handwriting pixels
+    ink_mask = grayscale_image[:, :, 0] < 200
 
-    # Find the coordinates of all detected ink pixels
-    coordinates = tf.where(
-        ink_mask
-    )
+    # Find the coordinates of handwriting pixels
+    coordinates = tf.where(ink_mask)
 
-    # Check whether any handwriting was detected
+    # If no handwriting is detected, return original image
     if tf.shape(coordinates)[0] == 0:
-
-        # Return the original image if no ink is found
         return image
 
-    # Find the topmost ink pixel
-    min_y = tf.reduce_min(
-        coordinates[:, 0]
+    # Find the bounding box of the handwriting
+    min_y = tf.reduce_min(coordinates[:, 0])
+    min_x = tf.reduce_min(coordinates[:, 1])
+
+    max_y = tf.reduce_max(coordinates[:, 0])
+    max_x = tf.reduce_max(coordinates[:, 1])
+
+    # Add a small padding around the handwriting
+    padding = 10
+
+    min_y = tf.maximum(0, min_y - padding)
+    min_x = tf.maximum(0, min_x - padding)
+
+    max_y = tf.minimum(
+        tf.shape(image)[0] - 1,
+        max_y + padding
     )
 
-    # Find the leftmost ink pixel
-    min_x = tf.reduce_min(
-        coordinates[:, 1]
+    max_x = tf.minimum(
+        tf.shape(image)[1] - 1,
+        max_x + padding
     )
 
-    # Find the bottommost ink pixel
-    max_y = tf.reduce_max(
-        coordinates[:, 0]
-    )
-
-    # Find the rightmost ink pixel
-    max_x = tf.reduce_max(
-        coordinates[:, 1]
-    )
-
-    # Crop the image around the detected handwriting
+    # Crop only the handwriting area
     cropped_image = image[
         min_y:max_y + 1,
         min_x:max_x + 1,
         :
     ]
 
-    # Return the cropped handwriting image
+    # Return the cropped image
     return cropped_image
+
+  
 
 
 
