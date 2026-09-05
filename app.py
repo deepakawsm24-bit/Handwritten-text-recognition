@@ -469,8 +469,7 @@ with upload_tab:
         st.image(
             uploaded_image,
             caption="Uploaded image",
-            width="stretch"
-        )
+            width=200)
 
         # Convert the PIL image into a TensorFlow tensor
         image_tensor = tf.convert_to_tensor(
