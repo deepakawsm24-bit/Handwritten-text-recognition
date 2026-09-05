@@ -22,7 +22,7 @@ import streamlit as st
 from PIL import Image
 
 # Import the interactive drawing canvas
-from streamlit_drawable_konva import st_canvas
+from streamlit-drawable-konva import st_canvas
 
 
 
