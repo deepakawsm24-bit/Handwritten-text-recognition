@@ -338,7 +338,7 @@ with tab_upload:
 # 10. UPLOAD TAB
 # ============================================================
 
-with upload_tab:
+with tab_upload:
 
     st.header(
         "📤 Upload a Handwritten Word"
