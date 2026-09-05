@@ -603,54 +603,55 @@ with upload_tab:
 
 
 # Define a function to crop an image around the handwriting
-# Define a function to crop an image around the handwriting
 def crop_to_ink(image):
 
-    # Convert the RGB image to grayscale
-    grayscale_image = tf.image.rgb_to_grayscale(image)
+    # Convert TensorFlow tensor to NumPy array
+    image_np = image.numpy()
 
-    # Detect only dark handwriting pixels
-    ink_mask = grayscale_image[:, :, 0] < 200
+    # Convert RGB image to grayscale
+    grayscale = np.mean(image_np, axis=2)
 
-    # Find the coordinates of handwriting pixels
-    coordinates = tf.where(ink_mask)
+    # Detect dark handwriting pixels
+    ink_mask = grayscale < 200
+
+    # Find coordinates of handwriting pixels
+    coordinates = np.argwhere(ink_mask)
 
     # If no handwriting is detected, return original image
-    if tf.shape(coordinates)[0] == 0:
+    if coordinates.size == 0:
         return image
 
-    # Find the bounding box of the handwriting
-    min_y = tf.reduce_min(coordinates[:, 0])
-    min_x = tf.reduce_min(coordinates[:, 1])
+    # Find bounding box
+    min_y = coordinates[:, 0].min()
+    min_x = coordinates[:, 1].min()
 
-    max_y = tf.reduce_max(coordinates[:, 0])
-    max_x = tf.reduce_max(coordinates[:, 1])
+    max_y = coordinates[:, 0].max()
+    max_x = coordinates[:, 1].max()
 
-    # Add a small padding around the handwriting
+    # Add small padding
     padding = 10
 
-    min_y = tf.maximum(0, min_y - padding)
-    min_x = tf.maximum(0, min_x - padding)
+    # Keep crop inside image boundaries
+    min_y = max(0, min_y - padding)
+    min_x = max(0, min_x - padding)
 
-    max_y = tf.minimum(
-        tf.shape(image)[0] - 1,
-        max_y + padding
-    )
+    max_y = min(image_np.shape[0] - 1, max_y + padding)
+    max_x = min(image_np.shape[1] - 1, max_x + padding)
 
-    max_x = tf.minimum(
-        tf.shape(image)[1] - 1,
-        max_x + padding
-    )
-
-    # Crop only the handwriting area
-    cropped_image = image[
+    # Crop the handwriting
+    cropped_image = image_np[
         min_y:max_y + 1,
         min_x:max_x + 1,
         :
     ]
 
-    # Return the cropped image
-    return cropped_image
+    # Convert back to TensorFlow tensor
+    return tf.convert_to_tensor(
+        cropped_image,
+        dtype=tf.uint8
+    )
+       
+
 
   
 
