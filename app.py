@@ -74,7 +74,7 @@ prediction_model = tf.keras.models.load_model(
     MODEL_PATH,
     compile=False
 )
-
+CHAR_MAPPING_JSON = os.path.join(BASE_DIR, "char_mapping.json")
 # Load character mapping
 if os.path.exists(NUM_TO_CHAR_PATH):
     with open(NUM_TO_CHAR_PATH, "rb") as f:
