@@ -18,8 +18,12 @@ import tensorflow as tf
 # Import Streamlit for creating the web application
 import streamlit as st
 
+# Import PIL Image for image processing
+from PIL import Image
+
 # Import the interactive drawing canvas
-from streamlit_drawable_canvas import st_canvas
+from streamlit_drawable_konva import st_canvas
+
 
 
 # ============================================================
