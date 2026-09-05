@@ -268,58 +268,70 @@ def decode_prediction(predictions):
 # 7. PREDICT A SINGLE IMAGE
 # ============================================================
 
-def predict_word(image):
+# ------------------------------------------------------------
+# UPLOAD TAB
+# ------------------------------------------------------------
+with tab_upload:
+    st.header("Upload a Handwritten Word")
+    st.write("Upload an image containing a single handwritten word.")
 
-    # Preprocess image
-    processed_image = preprocess_image(
-        image
+    uploaded_file = st.file_uploader(
+        "Choose an image",
+        type=["png", "jpg", "jpeg"],
+        help="Use one handwritten word per image.",
     )
 
-    # CRNN prediction
-    predictions = prediction_model.predict(
-        processed_image,
-        verbose=0
+    auto_crop_upload = st.checkbox(
+        "Automatically crop handwriting",
+        value=True,
+        key="auto_crop_upload",
     )
 
-    # CTC decoding
-    decoded_words = decode_prediction(
-        predictions
-    )
+    if uploaded_file is not None:
+        try:
+            uploaded_image = Image.open(
+                uploaded_file
+            ).convert("RGB")
 
-    return decoded_words[0]
+            # Small preview
+            st.image(
+                uploaded_image,
+                caption="Uploaded image",
+                width=200,
+            )
 
+            if st.button(
+                "🔎 Recognize Word",
+                key="recognize_upload",
+                type="primary",
+            ):
 
-# ============================================================
-# 8. STREAMLIT PAGE CONFIGURATION
-# ============================================================
+                with st.spinner("Recognizing..."):
 
-st.set_page_config(
-    page_title="CRNN Handwritten Word Recognizer",
-    layout="wide",
-    page_icon="✍️"
-)
+                    # SAME prediction function used by Draw
+                    predicted, cropped, processed = predict_word(
+                        uploaded_image,
+                        auto_crop=auto_crop_upload,
+                    )
 
-st.title(
-    "✍️ CRNN Handwritten Word Recognizer"
-)
+                # Show exact image sent through prediction pipeline
+                st.image(
+                    cropped,
+                    caption="Image used for recognition",
+                    width=200,
+                )
 
-st.write(
-    "Recognize a single handwritten word using a "
-    "CRNN + CTC model."
-)
+                st.subheader("Prediction")
 
+                st.success(
+                    predicted
+                    if predicted
+                    else "[empty prediction]"
+                )
 
-# ============================================================
-# 9. CREATE STREAMLIT TABS
-# ============================================================
-
-upload_tab, draw_tab = st.tabs(
-    [
-        "📤 Upload",
-        "✍️ Draw"
-    ]
-)
-
+        except Exception as e:
+            st.error("Could not process this image.")
+            st.exception(e)
 
 # ============================================================
 # 10. UPLOAD TAB
