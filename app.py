@@ -466,11 +466,16 @@ with upload_tab:
         ).convert("RGB")
 
         # Display the uploaded image
-        st.image(
-            uploaded_image,
-            caption="Uploaded image",
-            width=200)
+       display_image = Image.fromarray(
+    cropped_canvas.numpy().astype(np.uint8)
+)
 
+display_image.thumbnail((200, 100))
+
+st.image(
+    display_image,
+    caption="Image used for prediction"
+)
         # Convert the PIL image into a TensorFlow tensor
         image_tensor = tf.convert_to_tensor(
             np.array(uploaded_image),
