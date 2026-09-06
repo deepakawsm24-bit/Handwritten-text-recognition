@@ -1,5 +1,5 @@
-streamlit>=1.51.0
-streamlit-drawable-konva==0.2.2
+streamlit
 tensorflow==2.20.0
+streamlit-drawable-canvas-fix==0.9.8
 Pillow
 numpy<2.3
