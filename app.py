@@ -4,451 +4,332 @@ import pickle
 import numpy as np
 import tensorflow as tf
 import streamlit as st
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps
+
+try:
+    from streamlit_drawable_canvas import st_canvas
+except ImportError:
+    st_canvas = None
 
 # ============================================================
-# CRNN HANDWRITTEN WORD RECOGNIZER
-# Upload + Draw
+# CONFIG
 # ============================================================
-
 st.set_page_config(
     page_title="CRNN Handwritten Word Recognizer",
     page_icon="✍️",
     layout="wide",
 )
 
-IMG_WIDTH = 256
 IMG_HEIGHT = 64
+IMG_WIDTH = 256
+IMG_CHANNELS = 1
+TIME_STEPS = 32
 NUM_CLASSES = 80
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# The repository shown by you keeps the prediction model and
+# char_mapping.json in the project root.
+MODEL_PATH = os.path.join(
+    BASE_DIR, "CRNN_CTC_Basemodel_prediction.keras"
+)
+
+CHAR_MAPPING_JSON = os.path.join(
+    BASE_DIR, "char_mapping.json"
+)
 
 # ============================================================
-# 1. FIND MODEL + CHARACTER MAPPING
+# LOAD CHARACTER MAPPING
 # ============================================================
-
-def first_existing(paths):
-    for p in paths:
-        if os.path.exists(p):
-            return p
-    return None
-
-
-MODEL_PATH = first_existing([
-    os.path.join(BASE_DIR, "CRNN_CTC_Basemodel_prediction.keras"),
-    os.path.join(BASE_DIR, "baseline_model_deployment",
-                 "CRNN_CTC_Basemodel_prediction.keras"),
-])
-
-MAPPING_PATHS = [
-    os.path.join(BASE_DIR, "num_to_char.pkl"),
-    os.path.join(BASE_DIR, "common", "num_to_char.pkl"),
-    os.path.join(BASE_DIR, "baseline_model_deployment", "num_to_char.pkl"),
-]
-
-CHAR_MAPPING_JSON = os.path.join(BASE_DIR, "char_mapping.json")
-
-
 @st.cache_resource
-def load_mapping():
-    # Prefer the original training artifact.
-    for path in MAPPING_PATHS:
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                mapping = pickle.load(f)
-            return {int(k): str(v) for k, v in mapping.items()}
+def load_num_to_char():
+    # Prefer the exact mapping format saved in char_mapping.json.
+    with open(CHAR_MAPPING_JSON, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    # Fallback to repository JSON.
-    if os.path.exists(CHAR_MAPPING_JSON):
-        with open(CHAR_MAPPING_JSON, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    if "num_to_char" in data:
+        data = data["num_to_char"]
 
-        if isinstance(data, dict) and "num_to_char" in data:
-            data = data["num_to_char"]
+    return {int(k): str(v) for k, v in data.items()}
 
-        if isinstance(data, dict):
-            return {int(k): str(v) for k, v in data.items()}
-
-    raise FileNotFoundError(
-        "Character mapping not found. Add num_to_char.pkl or char_mapping.json."
-    )
-
-
+# ============================================================
+# LOAD PREDICTION MODEL
+# ============================================================
 @st.cache_resource
-def load_model():
-    if MODEL_PATH is None:
-        raise FileNotFoundError(
-            "CRNN_CTC_Basemodel_prediction.keras was not found."
-        )
-
+def load_prediction_model():
     return tf.keras.models.load_model(
         MODEL_PATH,
-        compile=False,
+        compile=False
     )
 
-
 try:
-    num_to_char = load_mapping()
-    prediction_model = load_model()
+    num_to_char = load_num_to_char()
+    prediction_model = load_prediction_model()
 except Exception as e:
     st.error("Model setup failed.")
-    st.code(str(e))
+    st.exception(e)
     st.stop()
 
-
 # ============================================================
-# 2. IMAGE PREPROCESSING
+# SAME PREPROCESSING AS TRAINING NOTEBOOK
 # ============================================================
+def distortion_free_resize(image, img_size=(256, 64)):
+    target_width, target_height = img_size
 
-def crop_to_ink(pil_image, threshold=250, padding_ratio=0.02):
-    """
-    Remove outer white margins while keeping a small safety margin.
-    Works for uploaded images and drawings.
-    """
-    pil_image = pil_image.convert("L")
-    arr = np.asarray(pil_image)
-
-    # Dark pixels = handwriting.
-    mask = arr < threshold
-
-    ys, xs = np.where(mask)
-
-    if len(xs) == 0 or len(ys) == 0:
-        return pil_image
-
-    x1, x2 = xs.min(), xs.max()
-    y1, y2 = ys.min(), ys.max()
-
-    pad = max(2, int(round(min(arr.shape) * padding_ratio)))
-
-    x1 = max(0, x1 - pad)
-    y1 = max(0, y1 - pad)
-    x2 = min(arr.shape[1] - 1, x2 + pad)
-    y2 = min(arr.shape[0] - 1, y2 + pad)
-
-    return pil_image.crop((x1, y1, x2 + 1, y2 + 1))
-
-
-def resize_and_pad(image):
-    """
-    Same deployment geometry as the CRNN training pipeline:
-    preserve aspect ratio, resize to fit 256x64,
-    then white-pad to exactly 256x64.
-    """
     image = tf.image.resize(
         image,
-        size=(IMG_HEIGHT, IMG_WIDTH),
-        preserve_aspect_ratio=True,
+        size=(target_height, target_width),
+        preserve_aspect_ratio=True
     )
 
     current_height = tf.shape(image)[0]
     current_width = tf.shape(image)[1]
 
-    pad_height = IMG_HEIGHT - current_height
-    pad_width = IMG_WIDTH - current_width
+    pad_height = target_height - current_height
+    pad_width = target_width - current_width
 
     image = tf.pad(
         image,
         [
             [0, pad_height],
             [0, pad_width],
-            [0, 0],
+            [0, 0]
         ],
-        constant_values=1.0,
+        constant_values=1.0
     )
 
     return image
 
+def preprocess_image(image):
+    # Same order as the training notebook:
+    # RGB -> grayscale -> [0,1] -> aspect-ratio resize -> white pad
+    image = tf.image.rgb_to_grayscale(image)
 
-def preprocess_pil_image(pil_image, auto_crop=True):
-    """
-    PIL RGB/L image -> model tensor (1, 64, 256, 1).
-    """
-    pil_image = pil_image.convert("L")
-
-    if auto_crop:
-        pil_image = crop_to_ink(pil_image)
-
-    arr = np.asarray(pil_image, dtype=np.uint8)
-
-    # One grayscale channel.
-    image = tf.convert_to_tensor(
-        arr[..., None],
-        dtype=tf.uint8,
-    )
-
-    # [0,255] -> [0,1], white background remains 1.
     image = tf.image.convert_image_dtype(
         image,
-        tf.float32,
+        tf.float32
     )
 
-    image = resize_and_pad(image)
+    image = distortion_free_resize(image)
 
-    return tf.expand_dims(image, axis=0), pil_image
-
+    return tf.expand_dims(image, axis=0)
 
 # ============================================================
-# 3. CTC DECODING
+# CROP ONLY FOR DRAW/OPTIONAL UPLOAD
 # ============================================================
+def crop_to_ink(image):
+    grayscale_image = tf.image.rgb_to_grayscale(image)
 
+    ink_mask = grayscale_image[:, :, 0] < 250
+    coordinates = tf.where(ink_mask)
+
+    if tf.shape(coordinates)[0] == 0:
+        return image
+
+    min_y = tf.reduce_min(coordinates[:, 0])
+    min_x = tf.reduce_min(coordinates[:, 1])
+    max_y = tf.reduce_max(coordinates[:, 0])
+    max_x = tf.reduce_max(coordinates[:, 1])
+
+    return image[
+        min_y:max_y + 1,
+        min_x:max_x + 1,
+        :
+    ]
+
+# ============================================================
+# CTC DECODING — SAME AS TRAINING NOTEBOOK
+# ============================================================
 def decode_prediction(predictions):
-    """
-    Greedy CTC decoding.
-    Model output: (batch, time, classes).
-    """
     input_length = np.full(
         predictions.shape[0],
-        predictions.shape[1],
-        dtype=np.int32,
+        predictions.shape[1]
     )
 
-    decoded, _ = tf.keras.backend.ctc_decode(
+    decoded_predictions, _ = tf.keras.backend.ctc_decode(
         predictions,
         input_length=input_length,
-        greedy=True,
+        greedy=True
     )
 
-    decoded = decoded[0].numpy()
+    decoded_predictions = decoded_predictions[0].numpy()
 
-    words = []
+    decoded_words = []
 
-    for sequence in decoded:
-        text = ""
+    for sequence in decoded_predictions:
+        predicted_text = ""
 
         for token in sequence:
             token = int(token)
 
-            # -1 = unused position returned by CTC decoder.
             if token == -1:
                 continue
 
             if token in num_to_char:
-                text += num_to_char[token]
+                predicted_text += num_to_char[token]
 
-        words.append(text)
+        decoded_words.append(predicted_text)
 
-    return words
+    return decoded_words
 
-
-# ============================================================
-# 4. PREDICTION
-# ============================================================
-
-def predict_word(pil_image, auto_crop=True):
-    processed, cropped = preprocess_pil_image(
-        pil_image,
-        auto_crop=auto_crop,
-    )
+def predict_word(image):
+    processed_image = preprocess_image(image)
 
     predictions = prediction_model.predict(
-        processed,
-        verbose=0,
+        processed_image,
+        verbose=0
     )
 
-    predicted_words = decode_prediction(predictions)
-
-    predicted = predicted_words[0] if predicted_words else ""
-
-    return predicted, cropped, processed
-
+    return decode_prediction(predictions)[0]
 
 # ============================================================
-# 5. DRAW CANVAS
+# UI
 # ============================================================
-
-def canvas_to_pil(image_data):
-    """
-    Convert Streamlit canvas RGBA data to a proper white-background
-    PIL image.
-
-    This is important because transparent canvas pixels must not be
-    interpreted as black/ink during preprocessing.
-    """
-    rgba = np.asarray(image_data, dtype=np.uint8)
-
-    if rgba.ndim != 3 or rgba.shape[2] < 4:
-        return Image.fromarray(rgba[:, :, :3]).convert("RGB")
-
-    rgb = rgba[:, :, :3].astype(np.float32)
-    alpha = rgba[:, :, 3:4].astype(np.float32) / 255.0
-
-    white = np.full_like(rgb, 255.0)
-
-    composited = rgb * alpha + white * (1.0 - alpha)
-
-    return Image.fromarray(
-        np.clip(composited, 0, 255).astype(np.uint8)
-    ).convert("RGB")
-
-
-# ============================================================
-# 6. UI
-# ============================================================
-
 st.title("✍️ CRNN Handwritten Word Recognizer")
 st.write(
-    "Recognize one handwritten English word using a CRNN + CTC model."
-)
-
-st.info(
-    "For best results, write or upload one word only. "
-    "Keep the letters separated and avoid lines, borders, or extra text."
+    "Recognize a single handwritten English word using a CRNN + CTC model."
 )
 
 tab_upload, tab_draw = st.tabs(["📤 Upload", "✍️ Draw"])
 
-
 # ============================================================
-# UPLOAD TAB
+# UPLOAD
 # ============================================================
-
 with tab_upload:
     st.header("📤 Upload a Handwritten Word")
+    st.write("Upload an image containing a single handwritten word.")
 
     uploaded_file = st.file_uploader(
-        "Choose a handwritten word image",
-        type=["png", "jpg", "jpeg"],
-        key="upload_file",
+        "Choose an image",
+        type=["png", "jpg", "jpeg"]
     )
 
-    auto_crop_upload = st.checkbox(
-        "Automatically crop handwriting",
-        value=True,
-        key="auto_crop_upload",
+    # IMPORTANT: staff's original upload behavior was NO crop by default.
+    auto_crop = st.checkbox(
+        "Automatically crop to ink",
+        value=False
     )
 
     if uploaded_file is not None:
-        try:
-            uploaded_image = Image.open(uploaded_file).convert("RGB")
+        uploaded_image = Image.open(
+            uploaded_file
+        ).convert("RGB")
+
+        st.image(
+            uploaded_image,
+            caption="Uploaded image",
+            use_container_width=True
+        )
+
+        image_tensor = tf.convert_to_tensor(
+            np.array(uploaded_image),
+            dtype=tf.uint8
+        )
+
+        if auto_crop:
+            image_tensor = crop_to_ink(image_tensor)
 
             st.image(
-                uploaded_image,
-                caption="Uploaded image",
-                use_container_width=True,
+                image_tensor.numpy(),
+                caption="Auto-cropped image",
+                use_container_width=True
             )
 
-            if st.button(
-                "🔍 Recognize Word",
-                key="upload_predict",
-                type="primary",
-            ):
-                with st.spinner("Recognizing handwriting..."):
-                    predicted, cropped, processed = predict_word(
-                        uploaded_image,
-                        auto_crop=auto_crop_upload,
-                    )
+        if st.button(
+            "🔍 Recognize Word",
+            key="upload_predict",
+            type="primary"
+        ):
+            with st.spinner("Recognizing handwriting..."):
+                predicted_word = predict_word(image_tensor)
 
-                if auto_crop_upload:
-                    st.image(
-                        cropped,
-                        caption="Image used for recognition",
-                        width=500,
-                    )
-
-                st.subheader("Prediction")
-
-                if predicted:
-                    st.success(predicted)
-                else:
-                    st.warning("No prediction was produced.")
-
-        except Exception as e:
-            st.error("Could not process the uploaded image.")
-            st.exception(e)
-
+            st.subheader("Prediction")
+            st.success(
+                predicted_word if predicted_word else "[empty prediction]"
+            )
 
 # ============================================================
-# DRAW TAB
+# DRAW — MATCH STAFF CANVAS SETTINGS
 # ============================================================
-
 with tab_draw:
     st.header("✍️ Draw a Handwritten Word")
-    st.write(
-        "Write one English word on the white canvas, then click "
-        "\"Recognize Drawing\"."
-    )
+    st.write("Write one word on the canvas using your mouse.")
 
-    try:
-        from streamlit_drawable_canvas import st_canvas
-
+    if st_canvas is None:
+        st.error(
+            "The drawing component is not installed. "
+            "Install streamlit-drawable-canvas-fix==0.9.8 "
+            "in requirements.txt and redeploy the app."
+        )
+    else:
+        # These settings match the staff member's original app:
+        # width=600, height=200, stroke_width=4.
         canvas_result = st_canvas(
-            fill_color="rgba(255, 255, 255, 0)",
             background_color="#FFFFFF",
             stroke_color="#000000",
-            stroke_width=7,
+            stroke_width=4,
             drawing_mode="freedraw",
-            width=700,
-            height=220,
+            width=600,
+            height=200,
             display_toolbar=True,
-            key="handwriting_canvas",
+            key="handwriting_canvas"
         )
 
         if st.button(
             "🔍 Recognize Drawing",
             key="draw_predict",
-            type="primary",
+            type="primary"
         ):
             if canvas_result.image_data is None:
                 st.warning("Please write a word on the canvas first.")
             else:
-                canvas_pil = canvas_to_pil(
-                    canvas_result.image_data
+                canvas_image = (
+                    canvas_result.image_data.astype(np.uint8)
                 )
 
-                # Check whether actual dark ink exists.
-                gray = np.asarray(
-                    ImageOps.grayscale(canvas_pil)
+                has_drawing = np.any(
+                    canvas_image[:, :, 3] > 0
                 )
 
-                if not np.any(gray < 250):
-                    st.warning(
-                        "Please write a word on the canvas first."
-                    )
+                if not has_drawing:
+                    st.warning("Please write a word on the canvas first.")
                 else:
-                    # Crop only for prediction; visible canvas is unchanged.
-                    cropped_canvas = crop_to_ink(canvas_pil)
+                    # Keep the staff member's RGBA -> RGB behavior.
+                    canvas_rgb = canvas_image[:, :, :3]
+
+                    canvas_tensor = tf.convert_to_tensor(
+                        canvas_rgb,
+                        dtype=tf.uint8
+                    )
+
+                    # Keep the staff member's draw behavior:
+                    # crop the handwriting before prediction.
+                    cropped_canvas = crop_to_ink(
+                        canvas_tensor
+                    )
 
                     st.image(
-                        cropped_canvas,
-                        caption="Image used for recognition",
-                        width=600,
+                        cropped_canvas.numpy(),
+                        caption="Image used for prediction",
+                        width=500
                     )
 
                     with st.spinner("Recognizing handwriting..."):
-                        predicted, cropped, processed = predict_word(
-                            cropped_canvas,
-                            auto_crop=False,
+                        predicted_word = predict_word(
+                            cropped_canvas
                         )
 
                     st.subheader("Prediction")
-
-                    if predicted:
-                        st.success(predicted)
-                    else:
-                        st.warning("No prediction was produced.")
-
-    except ImportError:
-        st.error(
-            "Draw canvas dependency is missing. Install "
-            "streamlit-drawable-canvas and restart Streamlit."
-        )
-
+                    st.success(
+                        predicted_word if predicted_word else "[empty prediction]"
+                    )
 
 # ============================================================
 # MODEL INFORMATION
 # ============================================================
-
 with st.expander("Model information"):
     st.write("Architecture: CRNN + CTC")
-    st.write("Input shape:", prediction_model.input_shape)
-    st.write("Output shape:", prediction_model.output_shape)
-    st.write("Expected image size: 64 × 256 × 1")
+    st.write("Input shape: (64, 256, 1)")
+    st.write("Output shape: (32, 80)")
     st.write("Decoder: CTC greedy decoding")
-    st.write("Character classes:", NUM_CLASSES)
-
-    st.caption(
-        "If the preprocessing is correct but the model still predicts "
-        "a different word, the remaining limitation is the trained "
-        "model's recognition accuracy/generalization."
-    )
+    st.write("Vocabulary: 79 characters + 1 CTC blank")
