@@ -1,4 +1,4 @@
-# 1. IMPORT REQUIRED LIBRARIES
+# 1. IMPORT REQUIRED LIBRARIEs
 
 # Import os for handling file and folder paths
 import os
