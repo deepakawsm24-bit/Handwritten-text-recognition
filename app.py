@@ -321,7 +321,7 @@ with tab_draw:
     if st_canvas is None:
         st.error(
             "The drawing component is not installed. "
-            "Install streamlit-drawable-konva from requirements.txt."
+            "Please redeploy after replacing requirements.txt with the supplied file."
         )
     else:
         canvas_result = st_canvas(
